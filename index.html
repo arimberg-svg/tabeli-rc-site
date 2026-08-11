@@ -345,6 +345,87 @@
       color: var(--muted-2);
     }
 
+    .role-list { display: grid; gap: 12px; }
+    .role-card {
+      display: grid;
+      grid-template-columns: 36px 1.2fr 1fr 1fr;
+      gap: 14px;
+      align-items: center;
+      padding: 14px 16px;
+      border: 1px solid var(--stroke);
+      border-radius: 16px;
+      background: linear-gradient(180deg, #fff, #faf8ff);
+    }
+    .role-rank {
+      width: 36px;
+      height: 36px;
+      border-radius: 12px;
+      display: grid;
+      place-items: center;
+      font-weight: 800;
+      font-size: 14px;
+      background: var(--primary-soft);
+      color: var(--primary);
+    }
+    .role-card:first-child .role-rank {
+      background: var(--primary);
+      color: #fff;
+    }
+    .role-title {
+      font-weight: 800;
+      font-size: 15px;
+      color: var(--text);
+      margin-bottom: 4px;
+    }
+    .role-meta {
+      font-size: 12px;
+      color: var(--muted-2);
+      font-weight: 600;
+    }
+    .role-metric .m-label {
+      font-size: 11px;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      color: var(--muted);
+      margin-bottom: 4px;
+    }
+    .role-metric .m-value {
+      font-size: 18px;
+      font-weight: 800;
+      color: var(--primary);
+      letter-spacing: -0.02em;
+    }
+    .role-metric .m-sub {
+      margin-top: 2px;
+      font-size: 12px;
+      color: var(--muted-2);
+    }
+    .share-track {
+      height: 8px;
+      border-radius: 999px;
+      background: rgba(66, 8, 168, 0.08);
+      overflow: hidden;
+      margin-top: 8px;
+    }
+    .share-fill {
+      height: 100%;
+      width: 0;
+      border-radius: inherit;
+      background: linear-gradient(90deg, #c4b5ff, #4208a8);
+      transition: width .9s cubic-bezier(.2,.8,.2,1);
+    }
+    .insight {
+      margin: 0 0 16px;
+      padding: 12px 14px;
+      border-radius: 12px;
+      background: var(--primary-soft);
+      border: 1px solid rgba(66, 8, 168, 0.16);
+      color: var(--muted);
+      font-size: 14px;
+    }
+    .insight strong { color: var(--primary); }
+
     .grid-3 {
       display: grid;
       grid-template-columns: repeat(3, 1fr);
@@ -440,6 +521,8 @@
       .grid-3 { grid-template-columns: 1fr; }
       .leave-kpis { grid-template-columns: 1fr 1fr; }
       .split-2 { grid-template-columns: 1fr; }
+      .role-card { grid-template-columns: 36px 1fr; }
+      .role-metric { grid-column: 1 / -1; }
       .bar-row { grid-template-columns: 120px 1fr 64px; }
       .brand-tag { display: none; }
       .hero h1 { max-width: none; }
@@ -541,24 +624,11 @@
     <section>
       <div class="panel">
         <div class="panel-head">
-          <h2>Таблица по должностям</h2>
-          <p>Реальные часы: среднее, медиана, всего за период</p>
+          <h2>Кто тянет объём часов</h2>
+          <p>Не средние «в вакууме», а вклад должности в общий фонд часов РЦ и типичная нагрузка</p>
         </div>
-        <div class="table-wrap">
-          <table>
-            <thead>
-              <tr>
-                <th>Должность</th>
-                <th class="num">Ср. часы / мес</th>
-                <th class="num">Медиана</th>
-                <th class="num">Всего часов</th>
-                <th class="num">Сотр.</th>
-                <th class="num">Чел.-мес.</th>
-              </tr>
-            </thead>
-            <tbody id="posTable"></tbody>
-          </table>
-        </div>
+        <p class="insight" id="roleInsight"></p>
+        <div class="role-list" id="roleProfiles"></div>
       </div>
     </section>
   </main>
@@ -782,17 +852,55 @@
         ${rankList(R.top_vac.slice(0, 8), (p) => p.vac_days, " дн.")}
       </article>`;
 
-    document.getElementById("posTable").innerHTML = R.by_position
-      .map(
-        (p) => `<tr>
-        <td>${shortPos(p.position)}</td>
-        <td class="num">${p.avg_hours.toFixed(1)}</td>
-        <td class="num">${p.median_hours.toFixed(1)}</td>
-        <td class="num">${p.total_hours.toLocaleString("ru-RU")}</td>
-        <td class="num">${p.people}</td>
-        <td class="num">${p.person_months}</td>
-      </tr>`
-      )
+    const totalAllHours = R.by_position.reduce((s, p) => s + p.total_hours, 0);
+    const rolesByShare = [...R.by_position].sort((a, b) => b.total_hours - a.total_hours);
+    const topShare = rolesByShare[0];
+    const topSharePct = Math.round((100 * topShare.total_hours) / totalAllHours);
+    const skewed = rolesByShare
+      .map((p) => ({ ...p, gap: p.median_hours - p.avg_hours }))
+      .sort((a, b) => Math.abs(b.gap) - Math.abs(a.gap))[0];
+
+    document.getElementById("roleInsight").innerHTML =
+      `<strong>${shortPos(topShare.position)}</strong> дают <strong>${topSharePct}%</strong> всех часов РЦ` +
+      ` (${topShare.total_hours.toLocaleString("ru-RU")} из ${Math.round(totalAllHours).toLocaleString("ru-RU")} ч). ` +
+      (Math.abs(skewed.gap) >= 10
+        ? `У роли «${shortPos(skewed.position)}» медиана ${skewed.median_hours} ч заметно ${skewed.gap > 0 ? "выше" : "ниже"} среднего ${skewed.avg_hours} ч — нагрузка по месяцам неровная.`
+        : `По большинству ролей среднее и медиана близки — нагрузка относительно стабильна.`);
+
+    document.getElementById("roleProfiles").innerHTML = rolesByShare
+      .map((p, i) => {
+        const share = (100 * p.total_hours) / totalAllHours;
+        const perPerson = p.people ? Math.round(p.total_hours / p.people) : 0;
+        const gap = p.median_hours - p.avg_hours;
+        const stability =
+          Math.abs(gap) < 8
+            ? "ровная нагрузка"
+            : gap > 0
+              ? `медиана выше ср. на ${gap.toFixed(0)} ч`
+              : `среднее тянут вниз короткие месяцы (−${Math.abs(gap).toFixed(0)} ч)`;
+        const absNote =
+          p.sick_days + p.vac_days > 0
+            ? `невыходы: ${p.sick_days} бол. / ${p.vac_days} отп.`
+            : "без отметок Б/ОТ";
+        return `<article class="role-card">
+          <div class="role-rank">${i + 1}</div>
+          <div>
+            <div class="role-title">${shortPos(p.position)}</div>
+            <div class="role-meta">${p.people} сотр. · ${p.person_months} чел.-мес. · ${absNote}</div>
+            <div class="share-track"><div class="share-fill" data-w="${share}"></div></div>
+          </div>
+          <div class="role-metric">
+            <div class="m-label">Доля фонда часов</div>
+            <div class="m-value">${share.toFixed(1)}%</div>
+            <div class="m-sub">${p.total_hours.toLocaleString("ru-RU")} ч за период</div>
+          </div>
+          <div class="role-metric">
+            <div class="m-label">Типичный месяц</div>
+            <div class="m-value">${p.median_hours} ч</div>
+            <div class="m-sub">ср. ${p.avg_hours} · ${perPerson.toLocaleString("ru-RU")} ч/чел. · ${stability}</div>
+          </div>
+        </article>`;
+      })
       .join("");
 
     requestAnimationFrame(() => {
