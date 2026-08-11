@@ -240,6 +240,111 @@
       color: var(--text);
     }
 
+    .leave-kpis {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 10px;
+      margin-bottom: 18px;
+    }
+    .leave-kpi {
+      background: var(--bg-elev-2);
+      border: 1px solid var(--stroke);
+      border-radius: 14px;
+      padding: 14px 14px 12px;
+    }
+    .leave-kpi .k-label {
+      font-size: 11px;
+      font-weight: 800;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      color: var(--muted);
+      margin-bottom: 6px;
+    }
+    .leave-kpi .k-value {
+      font-size: 22px;
+      font-weight: 800;
+      color: var(--primary);
+      letter-spacing: -0.02em;
+    }
+    .leave-kpi .k-note {
+      margin-top: 4px;
+      font-size: 12px;
+      color: var(--muted-2);
+    }
+
+    .legend-row {
+      display: flex;
+      gap: 16px;
+      flex-wrap: wrap;
+      margin-bottom: 12px;
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--muted);
+    }
+    .legend-row i {
+      display: inline-block;
+      width: 10px;
+      height: 10px;
+      border-radius: 3px;
+      margin-right: 6px;
+      vertical-align: middle;
+    }
+    .lg-sick { background: #4208a8; }
+    .lg-vac { background: #9b87f5; }
+
+    .dual-grid { display: grid; gap: 10px; }
+    .dual-row {
+      display: grid;
+      grid-template-columns: 56px 1fr 1fr;
+      gap: 12px;
+      align-items: center;
+    }
+    .dual-ym {
+      font-size: 13px;
+      font-weight: 800;
+      color: var(--primary);
+    }
+    .dual-col { display: grid; gap: 4px; }
+    .dual-meta {
+      display: flex;
+      justify-content: space-between;
+      font-size: 11px;
+      font-weight: 700;
+      color: var(--muted-2);
+    }
+    .dual-track {
+      height: 10px;
+      border-radius: 999px;
+      background: rgba(66, 8, 168, 0.08);
+      overflow: hidden;
+    }
+    .dual-fill {
+      height: 100%;
+      width: 0;
+      border-radius: inherit;
+      transition: width .85s cubic-bezier(.2,.8,.2,1);
+    }
+    .dual-fill.sick { background: linear-gradient(90deg, #7c4dff, #4208a8); }
+    .dual-fill.vac { background: linear-gradient(90deg, #c4b5ff, #9b87f5); }
+
+    .split-2 {
+      display: grid;
+      grid-template-columns: 1.15fr 1fr;
+      gap: 16px;
+      margin-top: 18px;
+    }
+    .subhead {
+      margin: 0 0 12px;
+      font-size: 15px;
+      font-weight: 800;
+      color: var(--primary);
+    }
+    .caption {
+      margin: 12px 0 0;
+      font-size: 12px;
+      color: var(--muted-2);
+    }
+
     .grid-3 {
       display: grid;
       grid-template-columns: repeat(3, 1fr);
@@ -333,6 +438,8 @@
     @media (max-width: 900px) {
       .stats { grid-template-columns: 1fr 1fr; }
       .grid-3 { grid-template-columns: 1fr; }
+      .leave-kpis { grid-template-columns: 1fr 1fr; }
+      .split-2 { grid-template-columns: 1fr; }
       .bar-row { grid-template-columns: 120px 1fr 64px; }
       .brand-tag { display: none; }
       .hero h1 { max-width: none; }
@@ -393,10 +500,37 @@
     <section>
       <div class="panel">
         <div class="panel-head">
-          <h2>Больничные и отпуска</h2>
-          <p>Сумма дней по месяцам (Б/Т и ОТ/ОД/ДО)</p>
+          <h2>Невыходы: больничные и отпуска</h2>
+          <p>Кто и когда отсутствовал — отдельно больничные и отпуска, плюс нагрузка по должностям</p>
         </div>
-        <div class="bars" id="leaveBars"></div>
+        <div class="leave-kpis" id="leaveKpis"></div>
+        <div class="legend-row">
+          <span><i class="lg-sick"></i>Больничные</span>
+          <span><i class="lg-vac"></i>Отпуска</span>
+        </div>
+        <div class="dual-grid" id="leaveDual"></div>
+        <div class="split-2">
+          <div>
+            <h3 class="subhead">По должностям — дней на человеко-месяц</h3>
+            <div class="bars" id="leaveByPos"></div>
+            <p class="caption">Показывает среднюю «потерю» дней на одного сотрудника в месяц по роли</p>
+          </div>
+          <div>
+            <h3 class="subhead">Кто формирует основную долю</h3>
+            <div class="table-wrap">
+              <table style="min-width:0">
+                <thead>
+                  <tr>
+                    <th>Сотрудник</th>
+                    <th class="num">Больн.</th>
+                    <th class="num">Отпуск</th>
+                  </tr>
+                </thead>
+                <tbody id="leavePeople"></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
       </div>
     </section>
 
@@ -511,14 +645,111 @@
       )
       .join("");
 
-    const maxLeave = Math.max(...R.monthly.flatMap((m) => [m.sick_days + m.vac_days, 1]));
-    document.getElementById("leaveBars").innerHTML = R.monthly
+    const totalSick = R.monthly.reduce((s, m) => s + m.sick_days, 0);
+    const totalVac = R.monthly.reduce((s, m) => s + m.vac_days, 0);
+    const peakSick = R.monthly.reduce((a, b) => (b.sick_days > a.sick_days ? b : a));
+    const peakVac = R.monthly.reduce((a, b) => (b.vac_days > a.vac_days ? b : a));
+    const peopleWithSick = R.top_sick.length;
+    const shareTopSick = totalSick
+      ? Math.round((100 * R.top_sick.slice(0, 3).reduce((s, p) => s + p.sick_days, 0)) / totalSick)
+      : 0;
+
+    document.getElementById("leaveKpis").innerHTML = [
+      {
+        label: "Больничные за период",
+        value: `${totalSick} дн.`,
+        note: `${peopleWithSick} сотр. с отметками Б/Т`,
+      },
+      {
+        label: "Отпуска за период",
+        value: `${totalVac} дн.`,
+        note: `${R.top_vac.length} сотр. с отпусками`,
+      },
+      {
+        label: "Пик больничных",
+        value: fmtYm(peakSick.ym),
+        note: `${peakSick.sick_days} дн. за месяц`,
+      },
+      {
+        label: "Топ-3 дают больничных",
+        value: `${shareTopSick}%`,
+        note: R.top_sick
+          .slice(0, 3)
+          .map((p) => p.name.split(" ")[0])
+          .join(", "),
+      },
+    ]
       .map(
-        (m) => `<div class="bar-row">
-        <div class="bar-label">${fmtYm(m.ym)} · больн. ${m.sick_days} / отп. ${m.vac_days}</div>
-        <div class="bar-track"><div class="bar-fill" data-w="${(100 * (m.sick_days + m.vac_days)) / maxLeave}"></div></div>
-        <div class="bar-val">${m.sick_days + m.vac_days}</div>
+        (k) => `<div class="leave-kpi">
+        <div class="k-label">${k.label}</div>
+        <div class="k-value">${k.value}</div>
+        <div class="k-note">${k.note}</div>
       </div>`
+      )
+      .join("");
+
+    const maxLeaveSide = Math.max(...R.monthly.flatMap((m) => [m.sick_days, m.vac_days, 1]));
+    document.getElementById("leaveDual").innerHTML = R.monthly
+      .map(
+        (m) => `<div class="dual-row">
+        <div class="dual-ym">${fmtYm(m.ym)}</div>
+        <div class="dual-col">
+          <div class="dual-meta"><span>Больн.</span><span>${m.sick_days}</span></div>
+          <div class="dual-track"><div class="dual-fill sick" data-w="${(100 * m.sick_days) / maxLeaveSide}"></div></div>
+        </div>
+        <div class="dual-col">
+          <div class="dual-meta"><span>Отпуск</span><span>${m.vac_days}</span></div>
+          <div class="dual-track"><div class="dual-fill vac" data-w="${(100 * m.vac_days) / maxLeaveSide}"></div></div>
+        </div>
+      </div>`
+      )
+      .join("");
+
+    const posLeave = [...R.by_position]
+      .filter((p) => p.sick_days + p.vac_days > 0)
+      .map((p) => ({
+        ...p,
+        loss: +(p.avg_sick + p.avg_vac).toFixed(2),
+      }))
+      .sort((a, b) => b.loss - a.loss);
+    const maxLoss = Math.max(...posLeave.map((p) => p.loss), 0.01);
+    document.getElementById("leaveByPos").innerHTML = posLeave
+      .map(
+        (p) => `<div class="bar-row">
+        <div class="bar-label" title="${p.position}">${shortPos(p.position)}</div>
+        <div class="bar-track"><div class="bar-fill" data-w="${(100 * p.loss) / maxLoss}"></div></div>
+        <div class="bar-val">${p.loss}</div>
+      </div>`
+      )
+      .join("");
+
+    const peopleLeave = [...R.top_sick, ...R.top_vac]
+      .reduce((map, p) => {
+        const cur = map.get(p.tab) || {
+          tab: p.tab,
+          name: p.name,
+          position: p.position,
+          sick_days: 0,
+          vac_days: 0,
+        };
+        cur.sick_days = Math.max(cur.sick_days, p.sick_days || 0);
+        cur.vac_days = Math.max(cur.vac_days, p.vac_days || 0);
+        map.set(p.tab, cur);
+        return map;
+      }, new Map());
+    const peopleRows = [...peopleLeave.values()]
+      .sort((a, b) => b.sick_days + b.vac_days - (a.sick_days + a.vac_days))
+      .slice(0, 8);
+    document.getElementById("leavePeople").innerHTML = peopleRows
+      .map(
+        (p) => `<tr>
+        <td>
+          <div style="font-weight:700">${p.name}</div>
+          <div style="font-size:12px;color:var(--muted-2)">${shortPos(p.position)}</div>
+        </td>
+        <td class="num">${p.sick_days}</td>
+        <td class="num">${p.vac_days}</td>
+      </tr>`
       )
       .join("");
 
